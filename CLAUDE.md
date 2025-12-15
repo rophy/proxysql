@@ -34,3 +34,58 @@ Customize the build with environment variables:
 ```bash
 CURVER=3.0.4 PKG_RELEASE=debian13 IMAGE_TAG=proxysql:latest ./scripts/build-docker.sh
 ```
+
+## Kubernetes Authentication Testing
+
+### Overview
+
+The `k8s/` directory contains manifests for testing MariaDB with Kubernetes ServiceAccount authentication:
+
+- **mariadb-auth-k8s**: A MariaDB authentication plugin that validates Kubernetes ServiceAccount tokens instead of passwords. Users authenticate with their SA token, and MariaDB verifies it against the cluster's OIDC endpoint.
+
+- **kube-federated-auth**: A Go service that validates ServiceAccount tokens across Kubernetes clusters. MariaDB's auth plugin calls its `/validate` endpoint to verify tokens.
+
+### Deploy with Skaffold
+
+Requires: `kind` cluster named `cluster-a` and `skaffold` CLI.
+
+```bash
+# Create kind cluster (if not exists)
+kind create cluster --name cluster-a
+
+# Deploy all components
+skaffold run
+
+# Or with live reload for development
+skaffold dev
+```
+
+This deploys to namespace `proxysql`:
+- kube-federated-auth (token validation service)
+- MariaDB with auth_k8s plugin
+- test-client (Debian pod with mysql-client)
+
+### Initialize MariaDB Users
+
+After deployment, create users that authenticate via ServiceAccount tokens:
+
+```bash
+kubectl exec -n proxysql deployment/mariadb -- mariadb -u root -e "
+CREATE USER 'local/proxysql/testuser'@'%' IDENTIFIED VIA auth_k8s;
+GRANT ALL ON testdb.* TO 'local/proxysql/testuser'@'%';
+FLUSH PRIVILEGES;
+"
+```
+
+Username format: `local/<namespace>/<serviceaccount>`
+
+### Test Authentication
+
+Connect from test-client using ServiceAccount token as password:
+
+```bash
+kubectl exec -n proxysql deployment/test-client -- bash -c '
+TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+mariadb -h mariadb -u "local/proxysql/testuser" -p"$TOKEN" -e "SELECT CURRENT_USER();"
+'
+```

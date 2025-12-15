@@ -1,0 +1,25 @@
+apiVersion: skaffold/v4beta7
+kind: Config
+metadata:
+  name: proxysql-dev
+
+build:
+  local:
+    push: false
+    useBuildkit: true
+  artifacts:
+  - image: test-client
+    docker:
+      dockerfile: k8s/Dockerfile.test-client
+
+deploy:
+  kubeContext: kind-cluster-a
+  kubectl: {}
+
+manifests:
+  rawYaml:
+  - k8s/namespace.yaml
+  - k8s/rbac.yaml
+  - k8s/kube-federated-auth.yaml
+  - k8s/mariadb.yaml
+  - k8s/test-client.yaml
