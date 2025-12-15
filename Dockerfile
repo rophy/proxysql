@@ -17,7 +17,8 @@ RUN apt install -y \
 	python3 \
 	zstd \
 	pkg-config \
-	sudo
+	sudo \
+	tini
 
 # proxysql build dependencies
 RUN apt install -y \
@@ -49,3 +50,6 @@ ENV CC=gcc
 ENV CXX=g++
 
 RUN ${CXX} --version
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
