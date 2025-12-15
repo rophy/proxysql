@@ -1898,13 +1898,14 @@ bool MySQL_Threads_Handler::set_variable(char *name, const char *value) {	// thi
 		}
 		if (!strcasecmp(name,"default_authentication_plugin")) {
 			if (vallen) {
-				const char * valids[2] = { "mysql_native_password", "caching_sha2_password" };
+				const char * valids[3] = { "mysql_native_password", "caching_sha2_password", "mysql_clear_password" };
 				for (long unsigned int i=0; i < sizeof(valids)/sizeof(char *) ; i++) {
 					if (strcmp(valids[i],value)==0) {
 						free(variables.default_authentication_plugin);
 						variables.default_authentication_plugin=strdup(value);
 						if (i==0) variables.default_authentication_plugin_int = 0;
 						if (i==1) variables.default_authentication_plugin_int = 2;
+						if (i==2) variables.default_authentication_plugin_int = 1;
 						return true;
 					}
 				}
