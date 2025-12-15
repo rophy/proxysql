@@ -2284,6 +2284,12 @@ bool MySQL_Protocol::PPHR_verify_password(MyProt_tmp_auth_vars& vars1, account_d
 				} else if (auth_plugin_id == AUTH_MYSQL_CLEAR_PASSWORD)  { // mysql_clear_password
 					if (strcmp(vars1.password, (char *) vars1.pass) == 0) {
 						ret = true;
+					} else if (strlen(vars1.password) == 0 && mysql_thread___cleartext_password_passthrough) {
+						// Passthrough mode: accept any password when stored password is empty
+						// Store the received cleartext password for backend use
+						free(vars1.password);
+						vars1.password = strdup((char *) vars1.pass);
+						ret = true;
 					}
 				} else if (auth_plugin_id == AUTH_MYSQL_CACHING_SHA2_PASSWORD) { // caching_sha2_password
 					// Checking 'switching_auth_stage' is required case due to a potential concurrent update

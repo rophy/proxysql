@@ -467,6 +467,7 @@ static char * mysql_thread_variables_names[]= {
 	(char *)"keep_multiplexing_variables",
 	(char *)"default_authentication_plugin",
 	(char *)"kill_backend_connection_when_disconnect",
+	(char *)"cleartext_password_passthrough",
 	(char *)"client_session_track_gtid",
 	(char *)"sessions_sort",
 #ifdef IDLE_THREADS
@@ -1137,6 +1138,7 @@ MySQL_Threads_Handler::MySQL_Threads_Handler() {
 	variables.stats_time_query_processor=false;
 	variables.query_cache_stores_empty_result=true;
 	variables.kill_backend_connection_when_disconnect=true;
+	variables.cleartext_password_passthrough=false;
 	variables.client_session_track_gtid=true;
 	variables.sessions_sort=true;
 #ifdef IDLE_THREADS
@@ -2166,6 +2168,7 @@ char ** MySQL_Threads_Handler::get_variables_list() {
 		VariablesPointers_bool["autocommit_false_not_reusable"]   = make_tuple(&variables.autocommit_false_not_reusable,   false);
 		VariablesPointers_bool["automatic_detect_sqli"]           = make_tuple(&variables.automatic_detect_sqli,           false);
 		VariablesPointers_bool["client_session_track_gtid"]       = make_tuple(&variables.client_session_track_gtid,       false);
+		VariablesPointers_bool["cleartext_password_passthrough"] = make_tuple(&variables.cleartext_password_passthrough, false);
 		VariablesPointers_bool["commands_stats"]                  = make_tuple(&variables.commands_stats,                  false);
 		VariablesPointers_bool["connection_warming"]              = make_tuple(&variables.connection_warming,              false);
 		VariablesPointers_bool["default_reconnect"]               = make_tuple(&variables.default_reconnect,               false);
@@ -4339,6 +4342,7 @@ void MySQL_Thread::refresh_variables() {
 	variables.query_cache_stores_empty_result=(bool)GloMTH->get_variable_int((char *)"query_cache_stores_empty_result");
 	REFRESH_VARIABLE_INT(hostgroup_manager_verbose);
 	REFRESH_VARIABLE_BOOL(kill_backend_connection_when_disconnect);
+	REFRESH_VARIABLE_BOOL(cleartext_password_passthrough);
 	REFRESH_VARIABLE_BOOL(client_session_track_gtid);
 	REFRESH_VARIABLE_BOOL(sessions_sort);
 	REFRESH_VARIABLE_BOOL(servers_stats);

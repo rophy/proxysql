@@ -562,6 +562,7 @@ class MySQL_Threads_Handler
 		bool stats_time_query_processor;
 		bool query_cache_stores_empty_result;
 		bool kill_backend_connection_when_disconnect;
+		bool cleartext_password_passthrough;
 		bool client_session_track_gtid;
 		bool enable_client_deprecate_eof;
 		bool enable_server_deprecate_eof;
