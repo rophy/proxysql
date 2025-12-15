@@ -7,15 +7,15 @@ services:
     network_mode: bridge
     privileged: true
     environment:
-      - MAKE
-      - MAKEOPT
-      - CURVER
+      - MAKE=make
+      - MAKEOPT=-j4
+      - CURVER=3.0.4
       - PKG_RELEASE
       - PROXYSQL_BUILD_TYPE
       - WITHGCOV
       - NOJEMALLOC
       - WITHASAN
-      - BLD_NAME
+      - BLD_NAME=
     command: bash -l -c /opt/entrypoint/entrypoint.bash
 
 ####################################################################################################

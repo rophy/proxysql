@@ -1,55 +1,20 @@
-FROM ubuntu:24.04
+FROM debian:13
 LABEL authors="Miro Stauder <miro@sysown.com>"
 
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEB_FILE=binaries/proxysql_3.0.4-debian13_amd64.deb
 
-RUN apt update && \
-	apt full-upgrade -y
+RUN apt-get update && \
+	apt-get install -y apt-utils
 
-# gcc & build tools
-RUN apt install -y \
-	make cmake automake bison flex \
-	git wget \
-	gcc g++ \
-	libtool \
-	gdb gdbserver \
-	equivs \
-	python3 \
-	zstd \
-	pkg-config \
-	sudo \
-	tini
+RUN apt-get install -y \
+	default-mysql-client
 
-# proxysql build dependencies
-RUN apt install -y \
-	libssl-dev gnutls-dev libgnutls28-dev \
-	libmysqlclient-dev \
-	libunwind8 libunwind-dev \
-	uuid-dev \
-	libncurses-dev \
-	libicu-dev \
-	libevent-dev \
-	libtirpc-dev
-
-# debug images need valgrind
-RUN apt install -y \
-	valgrind
+COPY ${DEB_FILE} /tmp/proxysql.deb
+RUN dpkg -i /tmp/proxysql.deb || apt-get install -fy && rm /tmp/proxysql.deb
 
 # clean apt cache
 RUN apt clean && \
 	rm -rf /var/cache/apt/* && \
 	rm -rf /var/lib/apt/lists/*
 
-# fetch needed include
-RUN wget -q -O /usr/include/mysql/hash.h https://raw.githubusercontent.com/mysql/mysql-server/5.7/include/hash.h
-
-# configure git safe dir
-RUN git config --global --add safe.directory '*'
-
-ENV CC=gcc
-ENV CXX=g++
-
-RUN ${CXX} --version
-
-ENTRYPOINT ["/usr/bin/tini", "--"]
-
+CMD ["proxysql", "-f", "--idle-threads", "-D", "/var/lib/proxysql"]
