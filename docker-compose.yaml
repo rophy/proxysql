@@ -1,0 +1,10 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: proxysql-dev:ubuntu24
+    volumes:
+      - .:/proxysql
+    working_dir: /proxysql
+    command: sleep infinity
