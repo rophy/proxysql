@@ -8,3 +8,16 @@ services:
       - .:/proxysql
     working_dir: /proxysql
     command: sleep infinity
+    depends_on:
+      - mariadb
+
+  mariadb:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: testdb
+    healthcheck:
+      test: ["CMD", "mariadb", "-u", "root", "-proot", "-e", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

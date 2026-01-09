@@ -19,6 +19,28 @@ Stop the container:
 docker compose down
 ```
 
+## Local Testing with MariaDB
+
+The `docker-compose.yaml` includes both the dev container and a MariaDB 11.4 instance for local testing.
+
+Services:
+- **dev**: ProxySQL build environment with source mounted at `/proxysql`
+- **mariadb**: MariaDB 11.4 with root password `root` and database `testdb`
+
+Test MariaDB connectivity from dev container:
+```bash
+docker compose exec dev mysql -h mariadb -u root -proot -e "SELECT VERSION()"
+```
+
+Create test users:
+```bash
+docker compose exec mariadb mariadb -u root -proot -e "
+CREATE USER 'testuser'@'%' IDENTIFIED BY 'testpass';
+GRANT ALL ON testdb.* TO 'testuser'@'%';
+FLUSH PRIVILEGES;
+"
+```
+
 ## Build Docker Image
 
 Build a ProxySQL Docker image from local source:
