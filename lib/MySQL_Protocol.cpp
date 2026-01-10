@@ -15,11 +15,13 @@ using json = nlohmann::json;
 #include "MySQL_Variables.h"
 
 #include <sstream>
+#include <map>
 
 //#include <ma_global.h>
 
 extern MySQL_Authentication *GloMyAuth;
 extern MySQL_LDAP_Authentication *GloMyLdapAuth;
+extern std::map<std::string, MySQL_LDAP_Authentication*> GloAuthPlugins;
 extern MySQL_Threads_Handler *GloMTH;
 
 #ifdef PROXYSQLCLICKHOUSE
@@ -100,6 +102,36 @@ void debug_spiffe_id(const unsigned char *user, const char *attributes, int __li
 }
 #endif
 
+// Helper function to get auth plugin from user attributes
+static MySQL_LDAP_Authentication* get_user_auth_plugin(const char* attributes, const char* username) {
+	if (!attributes || strlen(attributes) == 0) {
+		return nullptr;
+	}
+
+	try {
+		nlohmann::json attrs = nlohmann::json::parse(attributes);
+		auto it = attrs.find("auth_plugin");
+		if (it == attrs.end()) {
+			return nullptr;
+		}
+
+		std::string plugin_name = it->get<std::string>();
+		auto plugin_it = GloAuthPlugins.find(plugin_name);
+		if (plugin_it == GloAuthPlugins.end()) {
+			proxy_error("Auth plugin '%s' specified for user '%s' but not loaded\n",
+				plugin_name.c_str(), username ? username : "unknown");
+			return nullptr;
+		}
+
+		proxy_debug(PROXY_DEBUG_MYSQL_AUTH, 5, "Using auth plugin '%s' for user '%s'\n",
+			plugin_name.c_str(), username ? username : "unknown");
+		return plugin_it->second;
+	} catch (nlohmann::json::exception& e) {
+		proxy_debug(PROXY_DEBUG_MYSQL_AUTH, 5, "Failed to parse attributes JSON for user '%s': %s\n",
+			username ? username : "unknown", e.what());
+		return nullptr;
+	}
+}
 
 void MySQL_Protocol::init(MySQL_Data_Stream **__myds, MySQL_Connection_userinfo *__userinfo, MySQL_Session *__sess) {
 	myds=__myds;
@@ -2347,6 +2379,7 @@ bool MySQL_Protocol::process_pkt_handshake_response(unsigned char *pkt, unsigned
 	MyProt_tmp_auth_vars vars1;
 	account_details_t account_details {};
 	dup_account_details_t dup_details { true, true, true };
+	MySQL_LDAP_Authentication* user_auth_plugin = nullptr;
 
 	vars1._ptr = pkt;
 	mysql_hdr hdr;
@@ -2465,6 +2498,79 @@ __do_auth:
 #endif /* PROXYSQLCLICKHOUSE */
 	} else {
 		account_details = GloMyAuth->lookup((char*)vars1.user, USERNAME_FRONTEND, dup_details);
+	}
+
+	// Check for per-user auth plugin
+	user_auth_plugin = get_user_auth_plugin(account_details.attributes, (const char*)vars1.user);
+	if (user_auth_plugin) {
+		if ((*myds)->switching_auth_stage == 0) {
+			// Need to switch to clear password to get the token/password
+			(*myds)->switching_auth_type = AUTH_MYSQL_CLEAR_PASSWORD;
+			(*myds)->switching_auth_stage = 1;
+			(*myds)->auth_in_progress = 1;
+			generate_pkt_auth_switch_request(true, NULL, NULL);
+			(*myds)->myconn->userinfo->set((char *)vars1.user, NULL, vars1.db, NULL);
+			ret = false;
+			proxy_debug(PROXY_DEBUG_MYSQL_AUTH, 5,
+				"Session=%p , DS=%p , user='%s' . AUTH_SWITCH for per-user auth plugin\n",
+				(*myds), (*myds)->sess, vars1.user);
+			goto __exit_process_pkt_handshake_response;
+		}
+
+		// After AUTH_SWITCH, we have clear-text password/token in vars1.pass
+		// Validate via the user's auth plugin
+		char *backend_username = NULL;
+		vars1.password = user_auth_plugin->lookup(
+			(char *)vars1.user,
+			(char *)vars1.pass,  // Clear-text password/token
+			USERNAME_FRONTEND,
+			&account_details.use_ssl,
+			&account_details.default_hostgroup,
+			&account_details.default_schema,
+			&account_details.schema_locked,
+			&account_details.transaction_persistent,
+			&account_details.fast_forward,
+			&account_details.max_connections,
+			&account_details.sha1_pass,
+			&account_details.attributes,
+			&backend_username
+		);
+
+		if (vars1.password) {
+			// Auth successful
+			ret = true;
+			(*myds)->sess->default_hostgroup = account_details.default_hostgroup;
+			(*myds)->sess->default_schema = account_details.default_schema;
+			(*myds)->sess->user_attributes = account_details.attributes;
+			(*myds)->sess->schema_locked = account_details.schema_locked;
+			(*myds)->sess->transaction_persistent = account_details.transaction_persistent;
+			(*myds)->sess->session_fast_forward = account_details.fast_forward ? SESSION_FORWARD_TYPE_PERMANENT : SESSION_FORWARD_TYPE_NONE;
+			(*myds)->sess->user_max_connections = account_details.max_connections;
+
+			// Handle backend username mapping if provided
+			if (backend_username) {
+				account_details_t backend_acct = GloMyAuth->lookup(backend_username, USERNAME_BACKEND, { true, true, true });
+				if (backend_acct.password) {
+					userinfo->set(backend_username, NULL, NULL, NULL);
+					proxy_debug(PROXY_DEBUG_MYSQL_AUTH, 5,
+						"Session=%p , DS=%p , frontend_user='%s' mapped to backend_user='%s'\n",
+						(*myds), (*myds)->sess, vars1.user, backend_username);
+				} else {
+					proxy_error("Backend user '%s' not found for frontend user '%s'\n",
+						backend_username, vars1.user);
+					ret = false;
+				}
+				free(backend_username);
+				free_account_details(backend_acct);
+			}
+		} else {
+			// Auth failed
+			ret = false;
+			proxy_debug(PROXY_DEBUG_MYSQL_AUTH, 5,
+				"Session=%p , DS=%p , user='%s' . Per-user auth plugin validation failed\n",
+				(*myds), (*myds)->sess, vars1.user);
+		}
+		goto __exit_do_auth;
 	}
 
 	vars1.password = get_password(account_details, PASSWORD_TYPE::PRIMARY);
