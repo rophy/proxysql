@@ -2547,11 +2547,37 @@ __do_auth:
 			(*myds)->sess->session_fast_forward = account_details.fast_forward ? SESSION_FORWARD_TYPE_PERMANENT : SESSION_FORWARD_TYPE_NONE;
 			(*myds)->sess->user_max_connections = account_details.max_connections;
 
+			// Use LDAP-style auth path for connection tracking
+			// This ensures the frontend username is tracked separately from backend username
+			(*myds)->sess->use_ldap_auth = true;
+
 			// Handle backend username mapping if provided
 			if (backend_username) {
 				account_details_t backend_acct = GloMyAuth->lookup(backend_username, USERNAME_BACKEND, { true, true, true });
 				if (backend_acct.password) {
-					userinfo->set(backend_username, NULL, NULL, NULL);
+					// Preserve frontend username for connection tracking
+					userinfo->fe_username = strdup((const char *)vars1.user);
+					// Set backend username and password for backend connection
+					userinfo->set(backend_username, backend_acct.password, NULL, NULL);
+					// Also update vars1 so the code at __exit_do_auth doesn't overwrite our settings
+					if (vars1.password) free(vars1.password);
+					vars1.password = strdup(backend_acct.password);
+					// Set SHA1 password (hex format) for backend authentication
+					if (userinfo->sha1_pass) free(userinfo->sha1_pass);
+					userinfo->sha1_pass = NULL;
+					if (backend_acct.sha1_pass) {
+						// sha1_pass is already in hex format (like "*ABC123...")
+						userinfo->sha1_pass = strdup((char*)backend_acct.sha1_pass);
+					} else if (backend_acct.password[0] != '*') {
+						// Password is clear-text, compute SHA1 and convert to hex
+						char sha1_binary[SHA_DIGEST_LENGTH];
+						SHA1((const unsigned char*)backend_acct.password,
+							strlen(backend_acct.password),
+							(unsigned char*)sha1_binary);
+						userinfo->sha1_pass = sha1_pass_hex(sha1_binary);
+						// Cache the computed SHA1 for future use (in binary format for set_SHA1)
+						GloMyAuth->set_SHA1(backend_username, USERNAME_BACKEND, sha1_binary);
+					}
 					proxy_debug(PROXY_DEBUG_MYSQL_AUTH, 5,
 						"Session=%p , DS=%p , frontend_user='%s' mapped to backend_user='%s'\n",
 						(*myds), (*myds)->sess, vars1.user, backend_username);
@@ -2562,6 +2588,9 @@ __do_auth:
 				}
 				free(backend_username);
 				free_account_details(backend_acct);
+			} else {
+				// No backend mapping, use frontend username for connection tracking
+				userinfo->fe_username = strdup((const char *)vars1.user);
 			}
 		} else {
 			// Auth failed

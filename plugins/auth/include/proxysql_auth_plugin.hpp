@@ -4,6 +4,9 @@
  *
  * This header provides the interface that auth plugins must implement,
  * without requiring all of ProxySQL's internal headers.
+ *
+ * IMPORTANT: The virtual function order MUST match exactly with
+ * include/MySQL_LDAP_Authentication.hpp to maintain ABI compatibility.
  */
 
 #ifndef PROXYSQL_AUTH_PLUGIN_H
@@ -11,6 +14,13 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
+
+// Minimal SQLite3_result definition for ABI compatibility
+// Plugins never implement dump_all_users(), this is just for vtable layout
+struct SQLite3_result {
+    virtual ~SQLite3_result() = default;
+};
 
 // Credential type enum (matches ProxySQL's definition)
 enum cred_username_type {
@@ -22,7 +32,7 @@ enum cred_username_type {
  * @brief Base class for ProxySQL authentication plugins
  *
  * Plugins must inherit from this class and implement the lookup() method.
- * The class is designed to be ABI-compatible with MySQL_LDAP_Authentication.
+ * The virtual function order MUST match MySQL_LDAP_Authentication exactly.
  */
 class MySQL_LDAP_Authentication {
 public:
@@ -63,17 +73,33 @@ public:
         char** backend_username
     ) { return NULL; }
 
-    // Optional: connection tracking
+    // Connection tracking (vtable slots 3-4)
     virtual int increase_frontend_user_connections(char* username, int* max_connections = NULL) { return 0; }
     virtual void decrease_frontend_user_connections(char* username) {}
 
-    // Optional: plugin variables
+    // LDAP user dump (vtable slot 5)
+    virtual std::unique_ptr<SQLite3_result> dump_all_users() { return nullptr; }
+
+    // Locking (vtable slots 6-7)
+    virtual void wrlock() {}
+    virtual void wrunlock() {}
+
+    // Plugin variables (vtable slots 8-11)
     virtual char** get_variables_list() { return NULL; }
     virtual bool has_variable(const char* name) { return false; }
     virtual char* get_variable(char* name) { return NULL; }
     virtual bool set_variable(char* name, char* value) { return false; }
 
-    // Optional: version info
+    // LDAP mapping (vtable slots 12-15)
+    virtual void load_mysql_ldap_mapping(SQLite3_result* result) {}
+    virtual SQLite3_result* dump_table_mysql_ldap_mapping() { return NULL; }
+    virtual SQLite3_result* dump_table_pgsql_ldap_mapping() { return NULL; }
+    virtual uint64_t get_ldap_mapping_runtime_checksum() { return 0; }
+
+    // Stats (vtable slot 16)
+    virtual SQLite3_result* SQL3_getStats() { return NULL; }
+
+    // Version info (vtable slot 17)
     virtual void print_version() {}
 };
 
