@@ -1,0 +1,21 @@
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tini \
+    libssl3 \
+    libgnutls30 \
+    libmariadb3 \
+    default-mysql-client \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy ProxySQL binary (built locally)
+COPY src/proxysql /usr/bin/proxysql
+
+# Copy auth plugins
+COPY plugins/MySQL_AuthPlugin/k8s/auth_k8s.so /etc/proxysql/plugins/
+
+RUN mkdir -p /var/lib/proxysql && chmod 755 /var/lib/proxysql
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["proxysql", "-f", "--idle-threads", "-D", "/var/lib/proxysql"]

@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: proxysql-config
+  namespace: proxysql
+data:
+  proxysql.cnf: |
+    datadir="/var/lib/proxysql"
+    auth_plugins="/etc/proxysql/plugins/auth_k8s.so"
+
+    admin_variables=
+    {
+      admin_credentials="admin:admin"
+      mysql_ifaces="0.0.0.0:6032"
+    }
+
+    mysql_variables=
+    {
+      threads=4
+      max_connections=2048
+      default_query_delay=0
+      default_query_timeout=36000000
+      have_compress=true
+      poll_timeout=2000
+      interfaces="0.0.0.0:6033"
+      default_schema="testdb"
+      stacksize=1048576
+      server_version="8.0.0"
+      connect_timeout_server=3000
+      monitor_username="monitor"
+      monitor_password="monitor"
+      monitor_history=600000
+      monitor_connect_interval=60000
+      monitor_ping_interval=10000
+      monitor_read_only_interval=1500
+      monitor_read_only_timeout=500
+      ping_interval_server_msec=120000
+      ping_timeout_server=500
+      commands_stats=true
+      sessions_sort=true
+      connect_retries_on_failure=10
+    }
+
+    mysql_servers =
+    (
+      {
+        address="mariadb.proxysql.svc.cluster.local"
+        port=3306
+        hostgroup=0
+        max_connections=100
+      }
+    )
+
+    mysql_users =
+    (
+      {
+        username="k8s-user"
+        password=""
+        default_hostgroup=0
+        transaction_persistent=1
+        frontend=1
+        backend=0
+        attributes="{\"auth_plugin\": \"k8s\", \"backend_username\": \"dbuser\"}"
+      },
+      {
+        username="dbuser"
+        password="dbpass"
+        default_hostgroup=0
+        transaction_persistent=1
+        frontend=0
+        backend=1
+      }
+    )
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxysql
+  namespace: proxysql
+  labels:
+    app: proxysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: proxysql
+  template:
+    metadata:
+      labels:
+        app: proxysql
+    spec:
+      serviceAccountName: proxysql
+      containers:
+      - name: proxysql
+        image: proxysql
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 6033
+          name: mysql
+        - containerPort: 6032
+          name: admin
+        volumeMounts:
+        - name: config
+          mountPath: /etc/proxysql.cnf
+          subPath: proxysql.cnf
+        - name: data
+          mountPath: /var/lib/proxysql
+      volumes:
+      - name: config
+        configMap:
+          name: proxysql-config
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxysql
+  namespace: proxysql
+  labels:
+    app: proxysql
+spec:
+  selector:
+    app: proxysql
+  ports:
+  - port: 6033
+    targetPort: 6033
+    name: mysql
+  - port: 6032
+    targetPort: 6032
+    name: admin

@@ -15,32 +15,28 @@ spec:
       labels:
         app: mariadb
     spec:
-      serviceAccountName: mariadb
       containers:
       - name: mariadb
-        image: rophy/mariadb:10.6-auth-k8s-0.1
-        imagePullPolicy: IfNotPresent
+        image: mariadb:11.4
         ports:
         - containerPort: 3306
           name: mysql
         env:
         - name: MYSQL_ROOT_PASSWORD
-          value: ""
-        - name: MYSQL_ALLOW_EMPTY_PASSWORD
-          value: "yes"
+          value: "root"
         - name: MYSQL_DATABASE
           value: "testdb"
-        - name: KUBE_FEDERATED_AUTH_URL
-          value: "http://kube-federated-auth.proxysql.svc.cluster.local:8080/validate"
-        - name: MAX_TOKEN_TTL
-          value: "3600"
+        - name: MYSQL_USER
+          value: "dbuser"
+        - name: MYSQL_PASSWORD
+          value: "dbpass"
         volumeMounts:
         - name: mysql-data
           mountPath: /var/lib/mysql
         livenessProbe:
           exec:
             command:
-            - mysqladmin
+            - mariadb-admin
             - ping
             - -h
             - localhost
@@ -50,7 +46,7 @@ spec:
         readinessProbe:
           exec:
             command:
-            - mysqladmin
+            - mariadb-admin
             - ping
             - -h
             - localhost

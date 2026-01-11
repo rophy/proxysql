@@ -26,14 +26,4 @@ spec:
       - name: client
         image: test-client
         imagePullPolicy: IfNotPresent
-        volumeMounts:
-        - name: token
-          mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-          readOnly: true
-      volumes:
-      - name: token
-        projected:
-          sources:
-          - serviceAccountToken:
-              path: token
-              expirationSeconds: 3600
+        command: ["sleep", "infinity"]

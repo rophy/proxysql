@@ -61,11 +61,28 @@ CURVER=3.0.4 PKG_RELEASE=debian13 IMAGE_TAG=proxysql:latest ./scripts/build-dock
 
 ### Overview
 
-The `k8s/` directory contains manifests for testing MariaDB with Kubernetes ServiceAccount authentication:
+The `k8s/` directory contains manifests for testing ProxySQL with Kubernetes ServiceAccount authentication.
 
-- **mariadb-auth-k8s**: A MariaDB authentication plugin that validates Kubernetes ServiceAccount tokens instead of passwords. Users authenticate with their SA token, and MariaDB verifies it against the cluster's OIDC endpoint.
+Architecture:
+```
+test-client (SA token) → ProxySQL (k8s auth plugin) → MariaDB (standard)
+                              ↓
+                    K8s TokenReview API
+```
 
-- **kube-federated-auth**: A Go service that validates ServiceAccount tokens across Kubernetes clusters. MariaDB's auth plugin calls its `/validate` endpoint to verify tokens.
+ProxySQL's k8s auth plugin validates ServiceAccount JWT tokens directly via the Kubernetes TokenReview API.
+
+### Prerequisites
+
+Build ProxySQL and the k8s auth plugin before deploying:
+
+```bash
+# Build ProxySQL
+docker compose exec dev make
+
+# Build k8s auth plugin
+docker compose exec dev make -C /proxysql/plugins/MySQL_AuthPlugin/k8s
+```
 
 ### Deploy with Skaffold
 
@@ -77,29 +94,12 @@ kind create cluster --name cluster-a
 
 # Deploy all components
 skaffold run
-
-# Or with live reload for development
-skaffold dev
 ```
 
 This deploys to namespace `proxysql`:
-- kube-federated-auth (token validation service)
-- MariaDB with auth_k8s plugin
+- ProxySQL with k8s auth plugin
+- MariaDB (standard image)
 - test-client (Debian pod with mysql-client)
-
-### Initialize MariaDB Users
-
-After deployment, create users that authenticate via ServiceAccount tokens:
-
-```bash
-kubectl exec -n proxysql deployment/mariadb -- mariadb -u root -e "
-CREATE USER 'local/proxysql/testuser'@'%' IDENTIFIED VIA auth_k8s;
-GRANT ALL ON testdb.* TO 'local/proxysql/testuser'@'%';
-FLUSH PRIVILEGES;
-"
-```
-
-Username format: `local/<namespace>/<serviceaccount>`
 
 ### Test Authentication
 
@@ -108,6 +108,8 @@ Connect from test-client using ServiceAccount token as password:
 ```bash
 kubectl exec -n proxysql deployment/test-client -- bash -c '
 TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-mariadb -h mariadb -u "local/proxysql/testuser" -p"$TOKEN" -e "SELECT CURRENT_USER();"
+mysql -h proxysql -P 6033 -u k8s-user -p"$TOKEN" -e "SELECT CURRENT_USER();"
 '
 ```
+
+Expected result: `dbuser@%` (the backend user mapped from the k8s-user frontend user).
